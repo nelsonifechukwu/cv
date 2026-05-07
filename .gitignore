@@ -1,0 +1,13 @@
+*aux
+*log
+*out
+*bbl
+*bbg
+*blg
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+pdfs
+.env
+__pycache__/
+.claude/settings.local.json
