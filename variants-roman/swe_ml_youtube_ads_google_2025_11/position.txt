@@ -1,0 +1,33 @@
+Here is the clean job description extracted from the provided text:
+
+**Job Title:** Software Engineer III, Machine Learning, YouTube Ads  
+**Company:** YouTube (Google)  
+**Location:** Mountain View, CA, USA  
+
+### **Minimum Qualifications:**  
+- Bachelor’s degree or equivalent practical experience.  
+- 2 years of experience with software development in C++ or Python, or 1 year of experience with an advanced degree.  
+- 1 year of experience with one or more of the following: generative AI, large language modeling, reinforcement learning (e.g., sequential decision making), recommendation systems, or specialization in another ML field.  
+- 1 year of experience in ML (e.g., model deployment, model evaluation, optimization, data processing, debugging).  
+
+### **Preferred Qualifications:**  
+- Master's degree or PhD in Computer Science or a related technical field.  
+- 2 years of experience with data structures or algorithms.  
+- Experience developing accessible technologies.  
+
+### **About the Job:**  
+Google's software engineers develop next-generation technologies that change how billions of users connect, explore, and interact with information. The YouTube Ads ML team applies state-of-the-art machine learning techniques to make ad recommendations on YouTube, aiming to deliver useful, relevant, and personalized ad experiences while supporting advertiser goals and the creator ecosystem.  
+
+### **Responsibilities:**  
+- Write product or system development code.  
+- Collaborate with peers and stakeholders through design and code reviews to ensure best practices.  
+- Triage product or system issues and debug/track/resolve by analyzing sources of issues.  
+- Implement solutions in specialized ML areas, utilize ML infrastructure, and contribute to model optimization and data processing.  
+- Build end-to-end machine learning systems on large-scale data.  
+
+### **Compensation & Benefits:**  
+- **Base Salary Range:** $141,000–$202,000 (US) + bonus + equity + benefits.  
+- Compensation varies by role, level, location, skills, experience, and education.  
+- Benefits details available upon request.  
+
+(Note: Website navigation, footers, and unrelated content have been removed.)
