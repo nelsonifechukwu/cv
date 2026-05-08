@@ -11,3 +11,5 @@ pdfs
 .env
 __pycache__/
 .claude/settings.local.json
+
+variants-roman/
