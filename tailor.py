@@ -340,7 +340,7 @@ def generate_cover_letter(position_text, main_cv, similar_variants, model_name):
 1. Output ONLY the raw LaTeX code. No markdown blocks, no explanations, no formatting markers like ```latex or ```.
 2. DO NOT invent or add ANY information that is not explicitly present in the CV. This is the most important rule. Overclaiming is grounds for rejection of the output. This includes work experience, projects, skills, dates, quantitative claims, achievements.
 3. Use the candidate's actual prose register: formal British English unless the CV indicates otherwise, no contractions, no hedging, every sentence carries information.
-4. The cover letter must be in LaTeX, compilable with pdflatex, with the candidate's contact details (from the CV) at the top in a sender block. Date the letter today.
+4. The cover letter must be in LaTeX, compilable with pdflatex, with the candidate's contact details (from the CV) at the top in a sender block. Use exactly the date provided in the user message — do not invent or guess a date.
 
 # Structural rules
 
@@ -411,10 +411,12 @@ def generate_cover_letter(position_text, main_cv, similar_variants, model_name):
         )
         messages.append({"role": "assistant", "content": cl_content})
 
+    today_str = datetime.date.today().strftime("%-d %B %Y")
     messages.append(
         {
             "role": "user",
             "content": (
+                f"Today's date is {today_str}. Use exactly this date in the letter.\n\n"
                 f"For the following position:\n\n{position_text}\n\n"
                 f"Generate a tailored cover letter from the following CV:\n\n{main_cv_content}"
             ),
