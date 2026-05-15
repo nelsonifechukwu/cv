@@ -17,7 +17,7 @@ load_dotenv()
 
 # Model configuration
 LIGHTWEIGHT_MODEL = "claude-haiku-4-5"  # For extraction tasks
-HEAVY_DUTY_MODEL = "claude-sonnet-4-6"  # For CV tailoring
+HEAVY_DUTY_MODEL = "claude-sonnet-4-6"  # For CV / cover-letter tailoring
 
 
 # Color output functions
@@ -152,8 +152,12 @@ Be realistic but not overly harsh. Minor gaps are acceptable.""",
         return True, "Suitability check failed"
 
 
-def find_variants(variants_dir):
-    """Finds all existing CV variants."""
+def find_variants(variants_dir, artifact_filename):
+    """Finds all existing variants of the given artifact type.
+
+    artifact_filename is the filename of the artifact inside each variant
+    directory (e.g. 'cv.tex' or 'cover_letter.tex').
+    """
     variants = []
     variants_path = Path(variants_dir)
     if not variants_path.exists():
@@ -161,13 +165,13 @@ def find_variants(variants_dir):
 
     for variant_path in variants_path.iterdir():
         if variant_path.is_dir():
-            cv_path = variant_path / "cv.tex"
+            artifact_path = variant_path / artifact_filename
             position_path = variant_path / "position.txt"
-            if cv_path.exists() and position_path.exists():
+            if artifact_path.exists() and position_path.exists():
                 variants.append(
                     {
                         "name": variant_path.name,
-                        "cv_path": str(cv_path),
+                        "artifact_path": str(artifact_path),
                         "position_path": str(position_path),
                     }
                 )
@@ -257,7 +261,7 @@ Your output must be valid LaTeX that can be directly compiled."""
         )
 
     for variant in similar_variants:
-        with open(variant["cv_path"], "r") as f:
+        with open(variant["artifact_path"], "r") as f:
             cv_content = f.read()
         with open(variant["position_path"], "r") as f:
             position_content = f.read()
@@ -285,7 +289,7 @@ Your output must be valid LaTeX that can be directly compiled."""
         system=system_prompt,
         messages=messages,
     )
-    
+
     try:
         generated_content = response.content[0].text.strip()
     except (IndexError, AttributeError) as e:
@@ -315,48 +319,184 @@ Your output must be valid LaTeX that can be directly compiled."""
     return generated_content.strip()
 
 
-def generate_pdf(variant_dir):
-    """Generates a PDF from the CV LaTeX file using pdflatex and bibtex."""
-    variant_path = Path(variant_dir)
-    cv_tex_path = variant_path / "cv.tex"
+def generate_cover_letter(position_text, main_cv, similar_variants, model_name):
+    """Generates a new cover letter using the Anthropic Claude model.
 
-    if not cv_tex_path.exists():
-        raise FileNotFoundError(f"cv.tex not found in {variant_dir}")
+    Cover letters differ from CVs structurally: they are prose, four paragraphs,
+    and require *selection* (pick one or two threads from the CV and develop them)
+    rather than *reorganisation* (reorder structured CV sections). The system
+    prompt enforces STAR structure for the strongest thread, bans generic phrases,
+    and requires honest framing of gaps.
+    """
+    client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+
+    with open(main_cv, "r") as f:
+        main_cv_content = f.read()
+
+    system_prompt = """You are an expert cover-letter writer. You tailor cover letters for specific job positions, drawing only on the candidate's actual CV.
+
+# Hard rules
+
+1. Output ONLY the raw LaTeX code. No markdown blocks, no explanations, no formatting markers like ```latex or ```.
+2. DO NOT invent or add ANY information that is not explicitly present in the CV. This is the most important rule. Overclaiming is grounds for rejection of the output. This includes work experience, projects, skills, dates, quantitative claims, achievements.
+3. Use the candidate's actual prose register: formal British English unless the CV indicates otherwise, no contractions, no hedging, every sentence carries information.
+4. The cover letter must be in LaTeX, compilable with pdflatex, with the candidate's contact details (from the CV) at the top in a sender block. Date the letter today.
+
+# Structural rules
+
+5. Four paragraphs, in this order:
+   - **Opening (2 sentences).** Who the candidate is, what role they are applying for, and the one-sentence reason for fit. No generic enthusiasm. State the concrete match between candidate and role.
+   - **Strongest thread (4-7 sentences).** Pick the ONE experience from the CV that maps most directly onto the job description and develop it using STAR structure:
+     - Situation: the context of the work (project, problem, dataset).
+     - Task: the specific responsibility or problem to solve.
+     - Action: what the candidate did, with technical specifics drawn from the CV.
+     - Result: the quantified outcome (accuracy, latency, scale, publication, etc.) and the explicit transferable link to the role.
+   - **Secondary threads (3-5 sentences).** Two more experiences that broaden the picture. Mention briefly, do not develop in full. Use these to demonstrate range without diluting the main thread.
+   - **Close (2 sentences).** Why this employer specifically (one concrete reason from the job description). Availability and willingness to discuss further.
+
+6. SELECT, do not enumerate. The CV will have many experiences. Pick the two or three most relevant. Mentioning everything dilutes everything.
+
+7. Acknowledge gaps honestly when they exist. If the candidate's current research is on a different topic to the role, say so and explain what transfers (methodology, research practice, related domain experience). Pretending the gap does not exist is visible to any careful reader.
+
+# Stylistic rules
+
+8. Banned phrases (these mark a letter as generic or AI-generated within seconds):
+   - "I am passionate about..."
+   - "I am excited to apply..."
+   - "I believe I would be a great fit..."
+   - "As you can see from my CV..."
+   - "I am writing to express my interest in..."
+   Do not use these. State substance directly.
+
+9. No bullet points in the body. The letter is prose. Bullets in a cover letter signal the writer could not be bothered to write sentences.
+
+10. Quantify everywhere quantification is honest. Numbers in the CV (accuracy, latency, scale, rank) belong in the letter. "98% detection accuracy" beats "high accuracy"; "processed terabyte-scale data" beats "processed large amounts of data".
+
+11. Do not pad. If the strongest version of the letter is 350 words, do not stretch to 500. Length is set by content, not by appearance.
+
+# LaTeX rules
+
+12. Use a simple, clean letter format. Sender block (candidate's name, location, email, website if present) at the top. Date below. Recipient block ("Hiring Team" or specific name if the job description names one). Salutation. Body. Sign-off and signature.
+13. Do not use the `letter` document class unless you produce a complete, self-contained, compilable document. The `article` class with manual layout is more reliable.
+14. Use \\textbf{} for emphasis sparingly, only on technical terms that match the job description.
+15. Keep margins reasonable (around 2.2cm), 11pt font.
+
+# What you can do
+
+- Select which experiences to develop
+- Decide which transferable skills to emphasise
+- Frame the candidate's current research in terms relevant to the role
+- Choose technical vocabulary that matches the job description (when honest)
+
+# What you cannot do
+
+- Invent experiences, projects, skills, accomplishments, dates, or quantities
+- Claim domain expertise the CV does not support
+- Modify or invent education, publications, or employment history
+- Mention things from the CV that do not improve the case for this specific role"""
+
+    messages = []
+
+    # Few-shot from prior cover letters in the same voice, if any
+    for variant in similar_variants:
+        with open(variant["artifact_path"], "r") as f:
+            cl_content = f.read()
+        with open(variant["position_path"], "r") as f:
+            position_content = f.read()
+        messages.append(
+            {
+                "role": "user",
+                "content": f"For the following position:\n\n{position_content}\n\nGenerate a tailored cover letter.",
+            }
+        )
+        messages.append({"role": "assistant", "content": cl_content})
+
+    messages.append(
+        {
+            "role": "user",
+            "content": (
+                f"For the following position:\n\n{position_text}\n\n"
+                f"Generate a tailored cover letter from the following CV:\n\n{main_cv_content}"
+            ),
+        }
+    )
+
+    response = client.messages.create(
+        model=model_name,
+        max_tokens=4000,
+        system=system_prompt,
+        messages=messages,
+    )
+
+    try:
+        generated_content = response.content[0].text.strip()
+    except (IndexError, AttributeError) as e:
+        error(f"Failed to extract content from Claude response: {e}")
+        raise ValueError(f"Unexpected Claude API response structure: {e}")
+
+    # Post-process: strip markdown code fences if the model added them despite instructions
+    latex_blocks = re.findall(r"```latex\s*\n(.*?)\n```", generated_content, re.DOTALL)
+    if latex_blocks:
+        generated_content = max(latex_blocks, key=len)
+    else:
+        code_blocks = re.findall(r"```\s*\n(.*?)\n```", generated_content, re.DOTALL)
+        if code_blocks:
+            generated_content = max(code_blocks, key=len)
+
+    return generated_content.strip()
+
+
+def generate_pdf(variant_dir, tex_filename):
+    """Generates a PDF from a LaTeX file using pdflatex (and bibtex for CVs).
+
+    tex_filename is the name of the .tex file (e.g. 'cv.tex' or 'cover_letter.tex').
+    For CVs we run pdflatex -> bibtex -> pdflatex to resolve bibliography references.
+    For cover letters we run pdflatex twice (no bibliography).
+    """
+    variant_path = Path(variant_dir)
+    tex_path = variant_path / tex_filename
+
+    if not tex_path.exists():
+        raise FileNotFoundError(f"{tex_filename} not found in {variant_dir}")
+
+    base_name = Path(tex_filename).stem
+    is_cv = (tex_filename == "cv.tex")
 
     try:
         # First pdflatex run
         subprocess.run(
-            ["pdflatex", "-interaction=nonstopmode", "cv.tex"],
+            ["pdflatex", "-interaction=nonstopmode", tex_filename],
             cwd=str(variant_path),
             check=True,
             capture_output=True,
             text=True,
         )
 
-        # Run bibtex
-        subprocess.run(
-            ["bibtex", "cv"],
-            cwd=str(variant_path),
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        # Bibtex pass for CV (cover letter has no bibliography)
+        if is_cv:
+            subprocess.run(
+                ["bibtex", base_name],
+                cwd=str(variant_path),
+                check=True,
+                capture_output=True,
+                text=True,
+            )
 
         # Second pdflatex run to resolve references
         subprocess.run(
-            ["pdflatex", "-interaction=nonstopmode", "cv.tex"],
+            ["pdflatex", "-interaction=nonstopmode", tex_filename],
             cwd=str(variant_path),
             check=True,
             capture_output=True,
             text=True,
         )
 
-        pdf_path = variant_path / "cv.pdf"
+        pdf_path = variant_path / f"{base_name}.pdf"
         if pdf_path.exists():
             return str(pdf_path)
         else:
             raise FileNotFoundError(
-                "PDF generation completed but cv.pdf was not created"
+                f"PDF generation completed but {base_name}.pdf was not created"
             )
 
     except subprocess.CalledProcessError as e:
@@ -370,19 +510,38 @@ def generate_pdf(variant_dir):
 
 def main():
     """The main function."""
-    parser = argparse.ArgumentParser(description="Tailor a CV to a job description.")
+    parser = argparse.ArgumentParser(description="Tailor a CV or cover letter to a job description.")
     parser.add_argument(
         "--model",
         type=str,
         default=HEAVY_DUTY_MODEL,
-        help=f"The Anthropic Claude model to use for CV generation (default: {HEAVY_DUTY_MODEL}).",
+        help=f"The Anthropic Claude model to use for generation (default: {HEAVY_DUTY_MODEL}).",
     )
     parser.add_argument(
         "--write",
         action="store_true",
-        help="Save the full variant to variants/ directory. If not set, only the PDF will be saved to pdfs/.",
+        help="Save the full variant to the variants directory. If not set, only the PDF is saved to the pdfs directory.",
+    )
+    parser.add_argument(
+        "--cover-letter",
+        action="store_true",
+        help="Generate a cover letter instead of a CV. The source CV is still read from cv.tex.",
     )
     args = parser.parse_args()
+
+    # Set artifact-type-specific filenames and directories
+    if args.cover_letter:
+        artifact_label = "cover letter"
+        artifact_filename = "cover_letter.tex"
+        variants_dir = Path("cover_letters")
+        pdfs_dir = Path("cover_letter_pdfs")
+        generator_fn = generate_cover_letter
+    else:
+        artifact_label = "CV"
+        artifact_filename = "cv.tex"
+        variants_dir = Path("variants")
+        pdfs_dir = Path("pdfs")
+        generator_fn = generate_cv
 
     inform("Reading clipboard content...")
     position_text = get_clipboard_content()
@@ -407,7 +566,6 @@ def main():
     summary_name = f"{clean_name}_{now.year}_{now.month}"
 
     # Determine where to save based on --write flag
-    variants_dir = Path("variants")
     if args.write:
         new_variant_dir = variants_dir / summary_name
 
@@ -422,7 +580,8 @@ def main():
             inform("Overriding existing variant...")
     else:
         # Use temporary directory
-        new_variant_dir = Path("/tmp") / summary_name
+        tmp_prefix = "cover_letter_" if args.cover_letter else ""
+        new_variant_dir = Path("/tmp") / f"{tmp_prefix}{summary_name}"
         if new_variant_dir.exists():
             shutil.rmtree(new_variant_dir)
         inform(f"Using temporary directory: {new_variant_dir}")
@@ -447,8 +606,8 @@ def main():
             inform("\nAborted by user.")
             return
 
-    inform("\nFinding existing CV variants...")
-    variants = find_variants(variants_dir)
+    inform(f"\nFinding existing {artifact_label} variants...")
+    variants = find_variants(variants_dir, artifact_filename)
     inform(f"Found {len(variants)} existing variants")
 
     inform("\nFinding similar variants...")
@@ -460,61 +619,68 @@ def main():
     else:
         inform("No similar variants found")
 
-    inform(f"\nGenerating tailored CV using {args.model}...")
-    new_cv = generate_cv(
+    inform(f"\nGenerating tailored {artifact_label} using {args.model}...")
+    new_artifact = generator_fn(
         clean_position_text, main_cv_path, similar_variants, args.model
     )
-    success("CV generation complete!")
+    success(f"{artifact_label.capitalize()} generation complete!")
 
-    inform("\nSaving CV variant...")
+    inform(f"\nSaving {artifact_label} variant...")
     new_variant_dir.mkdir(parents=True, exist_ok=True)
 
-    (new_variant_dir / "cv.tex").write_text(new_cv)
+    (new_variant_dir / artifact_filename).write_text(new_artifact)
     (new_variant_dir / "position.txt").write_text(clean_position_text)
 
-    # Link bibliography file if it exists
-    bib_file = Path("pub.bib")
-    if bib_file.exists():
-        bib_link = new_variant_dir / bib_file.name
-        if not bib_link.exists():
-            bib_link.symlink_to(bib_file.resolve())
-            inform(f"Linked {bib_file} to variant directory")
+    # Link bibliography file if it exists (only relevant for CV)
+    if not args.cover_letter:
+        bib_file = Path("pub.bib")
+        if bib_file.exists():
+            bib_link = new_variant_dir / bib_file.name
+            if not bib_link.exists():
+                bib_link.symlink_to(bib_file.resolve())
+                inform(f"Linked {bib_file} to variant directory")
 
     inform(f"Variant saved to: {new_variant_dir}")
 
     inform("\nGenerating PDF...")
     try:
-        pdf_path = generate_pdf(new_variant_dir)
+        pdf_path = generate_pdf(new_variant_dir, artifact_filename)
         success(f"PDF generated successfully: {pdf_path}")
     except Exception as e:
         error(f"ERROR: Failed to generate PDF: {e}")
-        warn(f"The LaTeX file is saved at: {new_variant_dir / 'cv.tex'}")
+        warn(f"The LaTeX file is saved at: {new_variant_dir / artifact_filename}")
         error("\nTraceback:")
         error(traceback.format_exc())
         raise
 
-    # Link or copy PDF to pdfs/ directory
-    pdfs_dir = Path("pdfs")
+    # Link or copy PDF (and .tex source) to pdfs directory
     pdfs_dir.mkdir(exist_ok=True)
     final_pdf_path = pdfs_dir / f"{summary_name}.pdf"
+    final_tex_path = pdfs_dir / f"{summary_name}.tex"
+    tex_source_path = new_variant_dir / artifact_filename
 
     if args.write:
-        # When storing variant, create symlink instead of copying
-        inform("\nLinking PDF to pdfs/ directory...")
-        # Remove existing symlink or file if it exists
-        if final_pdf_path.exists() or final_pdf_path.is_symlink():
-            final_pdf_path.unlink()
-        # Create symlink to the PDF in the variant directory
-        final_pdf_path.symlink_to(Path(pdf_path).resolve())
+        # When storing variant, create symlinks instead of copying
+        inform(f"\nLinking PDF and .tex to {pdfs_dir}/ directory...")
+        for link_path, target_path in (
+            (final_pdf_path, Path(pdf_path)),
+            (final_tex_path, tex_source_path),
+        ):
+            if link_path.exists() or link_path.is_symlink():
+                link_path.unlink()
+            link_path.symlink_to(target_path.resolve())
         success(f"PDF linked to: {final_pdf_path}")
+        success(f"TeX linked to: {final_tex_path}")
     else:
-        # When using temp directory, copy the PDF before cleanup
-        inform("\nCopying PDF to pdfs/ directory...")
+        # When using temp directory, copy both before cleanup
+        inform(f"\nCopying PDF and .tex to {pdfs_dir}/ directory...")
         shutil.copy2(pdf_path, final_pdf_path)
+        shutil.copy2(tex_source_path, final_tex_path)
         success(f"PDF saved to: {final_pdf_path}")
+        success(f"TeX saved to: {final_tex_path}")
 
     if args.write:
-        success(f"\nSUCCESS: Generated new CV variant in: {new_variant_dir}")
+        success(f"\nSUCCESS: Generated new {artifact_label} variant in: {new_variant_dir}")
     else:
         # Clean up temporary directory
         inform(f"Cleaning up temporary directory: {new_variant_dir}")
