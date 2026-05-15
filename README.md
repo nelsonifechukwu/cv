@@ -1,34 +1,69 @@
-# Elijah Nelson — CV in LaTeX
+# Elijah Nelson — CV
 
-[Click here to view the pdf](./cv.pdf)
+A LaTeX CV plus a small Python script that tailors it to a job description using Claude.
 
-Self-contained, short, blue-ish.
+[View the PDF](./cv.pdf)
 
-* Not using fancy fonts
+---
 
-* Not using fancy images
-
-* Not using fancy anything
-
-Just a CV. Just some words.
+## Build the CV
 
 ```bash
-sudo apt install texlive-full
-sudo tlmgr init-usertree # on debian-based systems
-sudo tlmgr install fontawesome5
 pdflatex cv.tex && bibtex cv && pdflatex cv.tex
 ```
 
-Or, to build it quickly you can use `just`.
+Or use `just build`.
 
-*Forked from [knyazer/cv](https://github.com/knyazer/cv) — original template by Roman Knyazhitskiy.*
+Dependencies (Debian/Ubuntu):
 
-## How to use the tailoring script
+```bash
+sudo apt install texlive-full
+sudo tlmgr install fontawesome5
+```
 
-Approximately:
+## Tailor to a job
 
-- put your Anthropic API key in `.env` as `ANTHROPIC_API_KEY`
-- write your own CV in `/cv.tex`
-- `rm -rf variants`
+The `tailor.py` script reads a job description from your clipboard, generates a tailored CV or cover letter via Claude, and compiles it.
 
-then you can run `uv run tailor.py` or `uv run tailor.py --write`. The first one generates just the pdf in `/pdfs`; the second one dumps the full variant into `/variants` *and* links the pdf into `/pdfs`.
+### Setup
+
+1. Put your Anthropic API key in `.env`:
+
+   ```env
+   ANTHROPIC_API_KEY=sk-ant-...
+   ```
+
+2. Install Python deps with `uv sync`.
+
+### Usage
+
+Copy a job description to your clipboard, then:
+
+```bash
+# CV → pdfs/<position>.pdf  (+ .tex source)
+uv run tailor.py
+
+# Cover letter → cover_letter_pdfs/<position>.pdf  (+ .tex source)
+uv run tailor.py --cover-letter
+
+# Persist the full variant under variants/ or cover_letters/ for future few-shot context
+uv run tailor.py --write
+uv run tailor.py --cover-letter --write
+
+# Override the generation model (default: claude-sonnet-4-6)
+uv run tailor.py --model claude-opus-4-7
+```
+
+### Flags
+
+| Flag | Effect |
+| --- | --- |
+| `--cover-letter` | Generate a cover letter instead of a CV |
+| `--write` | Save the full variant directory; without this, only the final PDF + `.tex` are kept |
+| `--model MODEL` | Anthropic model for generation (default `claude-sonnet-4-6`) |
+
+Saved variants are reused as few-shot examples (selected by TF-IDF similarity), so the output improves over time when you run with `--write`.
+
+---
+
+*LaTeX template forked from [knyazer/cv](https://github.com/knyazer/cv) by Roman Knyazhitskiy.*
