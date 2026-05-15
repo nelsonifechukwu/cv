@@ -1,15 +1,22 @@
-*aux
-*log
-*out
-*bbl
-*bbg
-*blg
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.bbl
+*.bbg
+*.blg
 *.fdb_latexmk
 *.fls
 *.synctex.gz
-pdfs
+
+# Generated outputs
+pdfs/
+cover_letter_pdfs/
+variants/
+
+# Secrets and local config
 .env
-__pycache__/
 .claude/settings.local.json
 
-variants-roman/
+# Python
+__pycache__/
