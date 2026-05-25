@@ -476,13 +476,32 @@ def generate_pdf(variant_dir, tex_filename):
 
         # Bibtex pass for CV (cover letter has no bibliography)
         if is_cv:
-            subprocess.run(
-                ["bibtex", base_name],
-                cwd=str(variant_path),
-                check=True,
-                capture_output=True,
-                text=True,
-            )
+            # Read the .aux file produced by the first pdflatex run. If it does
+            # not contain \bibdata or \bibstyle (i.e. no \bibliography or
+            # bibliography package usage), skip the bibtex pass to avoid
+            # a non-zero exit status from bibtex when no bibliography is used.
+            aux_path = variant_path / f"{base_name}.aux"
+            run_bibtex = False
+            if aux_path.exists():
+                try:
+                    aux_text = aux_path.read_text()
+                    if "\\bibdata" in aux_text or "\\bibstyle" in aux_text:
+                        run_bibtex = True
+                except Exception:
+                    # If reading the aux file fails for some reason, fall back
+                    # to attempting bibtex (this is the safer failure mode).
+                    run_bibtex = True
+
+            if run_bibtex:
+                subprocess.run(
+                    ["bibtex", base_name],
+                    cwd=str(variant_path),
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            else:
+                warn("No bibliography data found in .aux; skipping bibtex pass.")
 
         # Second pdflatex run to resolve references
         subprocess.run(
@@ -508,7 +527,6 @@ def generate_pdf(variant_dir, tex_filename):
         error("\nTraceback:")
         error(traceback.format_exc())
         raise
-
 
 def main():
     """The main function."""
