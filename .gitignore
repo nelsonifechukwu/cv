@@ -13,6 +13,7 @@
 pdfs/
 cover_letter_pdfs/
 variants/
+samples/
 
 # Secrets and local config
 .env
