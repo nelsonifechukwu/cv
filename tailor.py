@@ -41,6 +41,68 @@ def error(message):
     print(f"\033[91m{message}\033[0m")
 
 
+# Master CV lives as modular files under MyCV/; flatten \input{} before sending
+# the full text to the model. Falls back to the legacy single-file cv.tex.
+MASTER_CV_DIR = Path("MyCV")
+MASTER_CV_MAIN = MASTER_CV_DIR / "main.tex"
+LEGACY_CV_FILE = Path("cv.tex")
+
+_INPUT_RE = re.compile(r"\\input\{([^}]+)\}")
+
+
+def flatten_latex(path):
+    """Recursively inline \\input{...} files so the model sees the full CV text.
+
+    Commented lines (starting with %) are left untouched, and \\bibliography is
+    left as-is. Include paths resolve relative to the including file's directory;
+    a missing .tex extension is added.
+    """
+    path = Path(path)
+    base = path.parent
+    lines_out = []
+    for line in path.read_text().splitlines():
+        if line.lstrip().startswith("%"):
+            lines_out.append(line)
+            continue
+        match = _INPUT_RE.search(line)
+        if match:
+            inc = base / match.group(1)
+            if inc.suffix == "":
+                inc = inc.with_suffix(".tex")
+            if inc.exists():
+                lines_out.append(flatten_latex(inc))
+                continue
+        lines_out.append(line)
+    return "\n".join(lines_out)
+
+
+def read_master_cv():
+    """Return the full master CV as a single LaTeX string.
+
+    Prefers the modular MyCV/main.tex (flattened); falls back to cv.tex.
+    """
+    if MASTER_CV_MAIN.exists():
+        return flatten_latex(MASTER_CV_MAIN)
+    if LEGACY_CV_FILE.exists():
+        return LEGACY_CV_FILE.read_text()
+    raise FileNotFoundError(
+        f"No master CV found: expected {MASTER_CV_MAIN} or {LEGACY_CV_FILE}"
+    )
+
+
+# The CV rulebook (CLAUDE.md) is injected into the generation/review prompts so
+# every tailored CV follows the same writing, ATS, and tailoring rules.
+RULEBOOK_FILE = Path("CLAUDE.md")
+
+
+def read_rulebook():
+    """Return the CV rulebook (CLAUDE.md) text, or '' if absent."""
+    if RULEBOOK_FILE.exists():
+        return RULEBOOK_FILE.read_text()
+    warn("CLAUDE.md rulebook not found; proceeding without it.")
+    return ""
+
+
 def get_clipboard_content():
     """Gets the content of the clipboard."""
     return pyperclip.paste()
@@ -100,12 +162,12 @@ def extract_position_content(position_text):
         return position_text
 
 
-def check_suitability(position_text, cv_path):
-    """Checks if the candidate is suitable for the position and returns (is_suitable, reason)."""
-    client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+def check_suitability(position_text, cv_content):
+    """Checks if the candidate is suitable for the position and returns (is_suitable, reason).
 
-    with open(cv_path, "r") as f:
-        cv_content = f.read()
+    cv_content is the full master-CV LaTeX text (already flattened).
+    """
+    client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
     try:
         response = client.messages.create(
@@ -197,8 +259,11 @@ def find_similar_variants(position_text, variants, n=2):
     return [variants[i] for i in top_indices]
 
 
-def generate_cv(position_text, main_cv, similar_variants, model_name):
-    """Generates a new CV using the Anthropic Claude model."""
+def generate_cv(position_text, main_cv_content, similar_variants, model_name):
+    """Generates a new CV using the Anthropic Claude model.
+
+    main_cv_content is the full master-CV LaTeX text (already flattened).
+    """
     client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
     # Read bibliography file for context
@@ -239,6 +304,13 @@ CRITICAL RULES:
 
 Your output must be valid LaTeX that can be directly compiled."""
 
+    rulebook = read_rulebook()
+    if rulebook:
+        system_prompt += (
+            "\n\n# CV RULEBOOK (authoritative -- follow every rule exactly)\n\n"
+            + rulebook
+        )
+
     messages = []
 
     # Add context about publications if bib file exists
@@ -272,9 +344,6 @@ Your output must be valid LaTeX that can be directly compiled."""
             }
         )
         messages.append({"role": "assistant", "content": cv_content})
-
-    with open(main_cv, "r") as f:
-        main_cv_content = f.read()
 
     messages.append(
         {
@@ -319,8 +388,10 @@ Your output must be valid LaTeX that can be directly compiled."""
     return generated_content.strip()
 
 
-def generate_cover_letter(position_text, main_cv, similar_variants, model_name):
+def generate_cover_letter(position_text, main_cv_content, similar_variants, model_name):
     """Generates a new cover letter using the Anthropic Claude model.
+
+    main_cv_content is the full master-CV LaTeX text (already flattened).
 
     Cover letters differ from CVs structurally: they are prose, four paragraphs,
     and require *selection* (pick one or two threads from the CV and develop them)
@@ -329,9 +400,6 @@ def generate_cover_letter(position_text, main_cv, similar_variants, model_name):
     and requires honest framing of gaps.
     """
     client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
-
-    with open(main_cv, "r") as f:
-        main_cv_content = f.read()
 
     system_prompt = """You are an expert cover-letter writer. You tailor cover letters for specific job positions, drawing only on the candidate's actual CV.
 
@@ -448,6 +516,81 @@ def generate_cover_letter(position_text, main_cv, similar_variants, model_name):
     return generated_content.strip()
 
 
+def refine_cv(position_text, draft_cv, model_name, rulebook=""):
+    """Recruiter/ATS review-and-revise pass over a drafted CV.
+
+    Acts as a senior recruiter for the target company AND an ATS screener:
+    internally scores the match, identifies missing job-description keywords and
+    the red flags a hiring manager would catch in under 10 seconds, then returns
+    a REVISED CV that fixes them. Uses only content already present in the draft
+    (no fabrication); leaves Education and Publications untouched.
+
+    Returns the revised LaTeX, or the original draft unchanged on any failure.
+    """
+    client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+
+    system_prompt = """You are a senior technical recruiter for the hiring company and, simultaneously, the ATS that screens its applicants. You are given a job description and a drafted CV (LaTeX).
+
+Work in two silent steps, then output only the result:
+
+STEP 1 (internal, do not print): Score the CV against the job description out of 100. List the highest-value keywords from the job description that are missing or under-weighted in the CV. Identify the red flags a hiring manager would spot in under 10 seconds (buried lead, vague duties without impact, weak first bullets, missing must-have keywords, sections that would be skipped on a 6-second scan, over-long bullets, inconsistent dates/tense).
+
+STEP 2 (the output): Return a REVISED version of the CV that raises the match score and removes those red flags. Surface relevant keywords into the summary, skills, and the FIRST bullet of the most relevant roles. Reorder or compress sections so the 6-second scan lands the strongest, most relevant content first. Tighten weak bullets toward the XYZ pattern.
+
+HARD CONSTRAINTS:
+- Use ONLY information already present in the draft. Do NOT invent experience, skills, metrics, dates, or scope. Surfacing a keyword is allowed only if the underlying skill is already evidenced in the draft.
+- Do NOT modify the Education section or the Publications / \\bibliography / \\nocite{*} block.
+- Do NOT change structural LaTeX commands or formatting macros (\\entrytitle, \\sectiontitle, geometry); change content and ordering only.
+- Do NOT mention the company name in the CV body.
+- Output ONLY the raw, compilable LaTeX of the revised CV. No commentary, no scores, no markdown code fences."""
+
+    if rulebook:
+        system_prompt += (
+            "\n\n# CV RULEBOOK (authoritative -- follow every rule exactly)\n\n"
+            + rulebook
+        )
+
+    messages = [
+        {
+            "role": "user",
+            "content": (
+                f"Job description:\n\n{position_text}\n\n"
+                f"Draft CV (LaTeX):\n\n{draft_cv}\n\n"
+                "Return the revised CV as raw LaTeX only."
+            ),
+        }
+    ]
+
+    try:
+        response = client.messages.create(
+            model=model_name,
+            max_tokens=8000,
+            system=system_prompt,
+            messages=messages,
+        )
+        revised = response.content[0].text.strip()
+    except Exception as e:
+        warn(f"Review pass failed ({e}); keeping the unrevised draft.")
+        return draft_cv
+
+    # Strip markdown code fences if the model added them despite instructions.
+    latex_blocks = re.findall(r"```latex\s*\n(.*?)\n```", revised, re.DOTALL)
+    if latex_blocks:
+        revised = max(latex_blocks, key=len)
+    else:
+        code_blocks = re.findall(r"```\s*\n(.*?)\n```", revised, re.DOTALL)
+        if code_blocks:
+            revised = max(code_blocks, key=len)
+    revised = revised.strip()
+
+    # Guard against a truncated or empty response: keep the draft if so.
+    if len(revised) < 0.5 * len(draft_cv):
+        warn("Review pass output looked truncated; keeping the unrevised draft.")
+        return draft_cv
+
+    return revised
+
+
 def generate_pdf(variant_dir, tex_filename):
     """Generates a PDF from a LaTeX file using pdflatex (and bibtex for CVs).
 
@@ -545,7 +688,12 @@ def main():
     parser.add_argument(
         "--cover-letter",
         action="store_true",
-        help="Generate a cover letter instead of a CV. The source CV is still read from cv.tex.",
+        help="Generate a cover letter instead of a CV. The source CV is still read from the master CV (MyCV/main.tex).",
+    )
+    parser.add_argument(
+        "--no-review",
+        action="store_true",
+        help="Skip the automatic recruiter/ATS review-and-revise pass on generated CVs.",
     )
     args = parser.parse_args()
 
@@ -611,8 +759,8 @@ def main():
     inform(f"Extracted {len(clean_position_text)} characters of position content")
 
     inform(f"\nChecking suitability (using {LIGHTWEIGHT_MODEL})...")
-    main_cv_path = "cv.tex"
-    is_suitable, reason = check_suitability(clean_position_text, main_cv_path)
+    main_cv_content = read_master_cv()
+    is_suitable, reason = check_suitability(clean_position_text, main_cv_content)
 
     if is_suitable:
         success(f"Suitability check passed: {reason}")
@@ -641,9 +789,17 @@ def main():
 
     inform(f"\nGenerating tailored {artifact_label} using {args.model}...")
     new_artifact = generator_fn(
-        clean_position_text, main_cv_path, similar_variants, args.model
+        clean_position_text, main_cv_content, similar_variants, args.model
     )
     success(f"{artifact_label.capitalize()} generation complete!")
+
+    # Automatic recruiter/ATS review-and-revise pass (CVs only).
+    if not args.cover_letter and not args.no_review:
+        inform(f"\nRunning recruiter/ATS review pass (using {args.model})...")
+        new_artifact = refine_cv(
+            clean_position_text, new_artifact, args.model, read_rulebook()
+        )
+        success("Review pass complete.")
 
     inform(f"\nSaving {artifact_label} variant...")
     new_variant_dir.mkdir(parents=True, exist_ok=True)
