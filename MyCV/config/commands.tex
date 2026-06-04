@@ -1,0 +1,29 @@
+% Custom CV entry commands
+
+% Two-column entry: role, org, location flow on the left (wrap safely); date right-aligned.
+\newcommand{\entrytitle}[4]{%
+    \noindent%
+    \begin{minipage}[t]{0.77\textwidth}\raggedright\textbf{#1}, #2, #3\end{minipage}%
+    \hfill%
+    \begin{minipage}[t]{0.21\textwidth}\raggedleft #4\end{minipage}%
+}
+
+% Entry with date only (no location) -- used for projects.
+\newcommand{\entrytitlend}[3]{%
+    \noindent%
+    \begin{minipage}[t]{0.77\textwidth}\raggedright\textbf{#1}, #2\end{minipage}%
+    \hfill%
+    \begin{minipage}[t]{0.21\textwidth}\raggedleft #3\end{minipage}%
+}
+
+\newlist{details}{itemize}{1}
+\setlist[details]{
+    label=\textbullet,
+    leftmargin=1.5em,
+    topsep=0.2ex,
+    partopsep=-0pt,
+    itemsep=0.2ex,
+    parsep=0pt
+}
+
+\newcommand{\sectiontitle}[1]{\vspace{1mm}{\noindent\textbf{#1}}\vspace{1.5mm}\hrule\vspace{1mm}}

@@ -1,0 +1,36 @@
+\sectiontitle{Professional Experience}
+
+\entrytitle{Systems Engineer (Founding)}{\href{https://climateinafrica.com/}{Climate in Africa}}{Lagos, Nigeria}{10/2023 - 08/2025}
+\begin{details}
+    \item Built low-cost, WMO-compliant Modular In-situ Reporting Instruments (MIRI) measuring 14 meteorological parameters, with 1{,}000+ units deployed across Nigeria, Ivory Coast, Kenya, and Ghana.
+    \item Wrote a NOR Flash (MT25QL01GBBB) driver and co-designed CRC-verified OTA updates over BLE and octet streams for resilient field upgrades; ported 3K LOC from ATmega to STM32 (F4/F103) for a 30\% performance gain.
+    \item Designed MIRI firmware reaching 3.5 days per charge using a sleep scheduler, an RTOS, and non-blocking state machines, cutting GSM/GPRS latency by $\sim$70\%, with autonomous fallback logging to NOR Flash/SD card on connectivity loss.
+    \item Developed a non-blocking task scheduler for autonomous satellite tracking (azimuth and elevation actuation) and a self-designed LoRa base-to-ground-station link for telemetry and control.
+    \item Built the mail and notification architecture for climateinafrica.com, aggregating TBs of data from MIRI monitors and users, and architected a NOAA pipeline to scrape and parse GB-scale climate datasets for the analytics sandbox.
+    \item Led the entire product documentation effort for climateinafrica.com.
+\end{details}
+
+\entrytitle{Machine Learning Engineer}{\href{https://www.ticki.co/}{Ticki}}{Remote}{08/2024 - 07/2025}
+\begin{details}
+    \item Architected a facial-similarity retrieval system (OpenCV, FAISS, async Celery) serving 5{,}000 users, cutting end-to-end latency by $\sim$70\% to sub-100\,ms by migrating the index from FAISS IndexFlatL2 to IndexIVFFlat and caching face embeddings in memory.
+    \item Built the core pipeline: on first run, extract every face in the database and store its embedding as a NumPy array keyed to the source filename for traceability; on query, extract the input face and match it against the embedding index.
+    \item Handled multi-face queries with an interactive selection step backed by in-memory BytesIO buffers instead of disk; offloaded compute-intensive face-extraction and embedding to Celery workers, using Redis to deduplicate already-processed images and avoid redundant recomputation across a $\sim$3{,}000-image dataset.
+    \item Hardened a production Ubuntu VPS deployment for near-zero downtime under 1{,}000+ concurrent requests: a UFW firewall restricting access to designated IPs (no 0.0.0.0 exposure), scoped user groups, multiple Gunicorn workers, and Nginx load balancing.
+\end{details}
+
+\entrytitle{Reservoir Performance Simulation Intern}{\href{https://www.slb.com/}{Schlumberger (SLB)}}{Port Harcourt, Nigeria}{04/2022 - 08/2022}
+\begin{details}
+    \item Performed rock and fluid analysis on core samples in the wet lab (rheology, density/PVT, calorimetry, and precision measurements) to characterise formation stability parameters for drilling; interpreted subsurface and wellbore data in Petrel and Techlog.
+    \item Maintained and tested mechanical systems (CPS-361 surface units, compressors, generators) against full pre-deployment maintenance checklists before shipment to wellsites: sensor testing (flow, pressure, temperature, optical), oil changes, and repairs; raised maintenance throughput by $\sim$15\% and proposed an automated CPS-361 design.
+    \item Managed IT and networking for the entire SLB base: resolved issues across laptops, desktops, printers, and routers, configured access points and new-employee machines, and handled the IT ticket queue.
+\end{details}
+
+\entrytitle{Delegate of Croatia}{Model United Nations}{Beirut, Lebanon}{03/2019 - 04/2019}
+\begin{details}
+    \item Researched Indigenous cultural heritage and the preservation of cultural artifacts; prepared committee reports for UNESCO.
+\end{details}
+
+\entrytitle{Delegate of Israel}{Model United Nations}{Buenos Aires, Argentina}{09/2018 - 10/2018}
+\begin{details}
+    \item Researched policies for mitigating global climate change in developing countries.
+\end{details}
