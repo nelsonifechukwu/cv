@@ -61,3 +61,9 @@ This repository is Elijah Nelson's CV system. This file is the **single source o
 - Do not change structural commands or formatting macros (`\entrytitle`, `\sectiontitle`, geometry); change content, not presentation.
 - Do not modify the Education section or the Publications/`\bibliography`/`\nocite{*}` block.
 - Do not mention the target company name in the CV body.
+- **Never introduce a skill, tool, language, framework, technology, or certification absent from the master CV — even to match a job-description keyword.** Never relabel work to borrow the job's vocabulary (embedded firmware is not "RTL design", "digital hardware design", or "hardware verification"; functional testing/simulation is not hardware "verification"). A missing keyword is fine; a misrepresented one is disqualifying and gets caught in interview.
+
+## Honesty & gaps
+
+- When the role wants a skill the candidate genuinely lacks, **leave it out of the CV and report it to the candidate as a recommendation instead.** `tailor.py` prints and saves a gap analysis per run (match score, missing keywords, concrete things to learn or buried strengths to surface). Fabrication is replaced by advice.
+- A skill the candidate is genuinely acquiring may appear marked **"(currently learning)"** or **"(in progress)"** — only if that is true.

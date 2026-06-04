@@ -302,6 +302,7 @@ CRITICAL RULES:
 9. DO NOT use markdown syntax (e.g. **xyz**, _abc_, #heading). Use LaTeX, e.g. \\textbf{xyz}
 10. DO NOT mention the company name, or mention projects/results if they don't improve the overall picture. For example, you might want to mention "used AdamW with weight decay" only if the position is concerned with some research on precisely AdamW, since it's an assumption that everybody uses AdamW to train models these days.
 11. Try to keep the CV as concise as possible; the HR does not have the time to read through the whole thing!
+12. NEVER introduce a skill, tool, programming language, framework, technology, or certification that is not already present in the main CV, even if the job description asks for it. Do NOT rename or relabel existing work to borrow the job description's vocabulary (e.g., do not call embedded firmware "RTL design", "digital hardware design", or "hardware verification"; do not call functional testing or simulation "verification" in the hardware sense). If the role needs something the candidate lacks, leave it out entirely; missing skills are reported to the candidate separately, never invented into the CV.
 
 Your output must be valid LaTeX that can be directly compiled."""
 
@@ -539,7 +540,9 @@ STEP 1 (internal, do not print): Score the CV against the job description out of
 STEP 2 (the output): Return a REVISED version of the CV that raises the match score and removes those red flags. Surface relevant keywords into the summary, skills, and the FIRST bullet of the most relevant roles. Reorder or compress sections so the 6-second scan lands the strongest, most relevant content first. Tighten weak bullets toward the XYZ pattern.
 
 HARD CONSTRAINTS:
-- Use ONLY information already present in the draft. Do NOT invent experience, skills, metrics, dates, or scope. Surfacing a keyword is allowed only if the underlying skill is already evidenced in the draft.
+- Use ONLY information already present in the draft. Do NOT invent experience, skills, metrics, dates, or scope.
+- NEVER add a skill, tool, language, framework, technology, or certification that is absent from the draft, even to match a job-description keyword. You may surface or move forward a keyword ONLY if the exact underlying skill is already explicitly stated in the draft.
+- Do NOT relabel existing work to borrow the job's vocabulary (e.g., embedded firmware is not "RTL design", "digital hardware design", or "hardware verification"; functional testing/simulation is not hardware "verification"). Keyword-matching that misrepresents what the candidate did is a failure, worse than a missing keyword.
 - Do NOT modify the Education section or the Publications / \\bibliography / \\nocite{*} block.
 - Do NOT change structural LaTeX commands or formatting macros (\\entrytitle, \\sectiontitle, geometry); change content and ordering only.
 - Do NOT mention the company name in the CV body.
@@ -590,6 +593,55 @@ HARD CONSTRAINTS:
         return draft_cv
 
     return revised
+
+
+def recommend_gaps(position_text, master_cv_content, model_name):
+    """Advise the candidate (NOT the CV) on genuine gaps for a role.
+
+    Compares the job description against the full master CV and returns a short
+    markdown report: a match score, the genuinely missing skills/keywords, and
+    concrete, honest recommendations (what to learn, which buried strength to
+    surface). This never edits the CV -- keeping gaps as advice is how the
+    system stays honest instead of fabricating keywords into the CV.
+
+    Returns the markdown report, or '' on failure.
+    """
+    client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+
+    system_prompt = """You are a candid career advisor. Given a job description and a candidate's full master CV, produce a short, honest gap analysis to help the CANDIDATE decide what to improve. You are NOT rewriting the CV.
+
+Output concise markdown with exactly these three sections:
+## Match score
+One score out of 100 with a single sentence of justification.
+## Missing or weak keywords
+The most important skills, tools, or keywords the role wants that the CV does not genuinely evidence. Be specific and honest; do not pad.
+## Recommendations
+3-6 concrete, honest actions: skills/tools/certifications worth learning to become competitive (note any that are quick wins), and existing-but-buried strengths the candidate should surface. Never advise misrepresenting or relabelling experience.
+
+Be realistic and specific. Do not invent skills on the candidate's behalf."""
+
+    messages = [
+        {
+            "role": "user",
+            "content": (
+                f"Job description:\n\n{position_text}\n\n"
+                f"Candidate master CV:\n\n{master_cv_content}\n\n"
+                "Provide the gap analysis."
+            ),
+        }
+    ]
+
+    try:
+        response = client.messages.create(
+            model=model_name,
+            max_tokens=900,
+            system=system_prompt,
+            messages=messages,
+        )
+        return response.content[0].text.strip()
+    except Exception as e:
+        warn(f"Recommendation pass failed ({e}); skipping.")
+        return ""
 
 
 def generate_pdf(variant_dir, tex_filename):
@@ -862,6 +914,22 @@ def main():
         # Clean up temporary directory
         inform(f"Cleaning up temporary directory: {new_variant_dir}")
         shutil.rmtree(new_variant_dir)
+
+    # Honest gap analysis / recommendations for the candidate (CVs only).
+    # These are advice to the candidate, NOT added to the CV -- this is how the
+    # system surfaces missing job-description keywords without fabricating them.
+    if not args.cover_letter:
+        inform(f"\nGenerating gap analysis (using {LIGHTWEIGHT_MODEL})...")
+        recommendations = recommend_gaps(
+            clean_position_text, main_cv_content, LIGHTWEIGHT_MODEL
+        )
+        if recommendations:
+            rec_path = pdfs_dir / f"{summary_name}.recommendations.md"
+            rec_path.write_text(recommendations)
+            print()
+            warn("=== Recommendations (gaps to close -- NOT added to the CV) ===")
+            inform(recommendations)
+            success(f"Recommendations saved to: {rec_path}")
 
     success(f"Final PDF location: {final_pdf_path}")
 
