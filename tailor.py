@@ -46,6 +46,7 @@ def error(message):
 MASTER_CV_DIR = Path("MyCV")
 MASTER_CV_MAIN = MASTER_CV_DIR / "main.tex"
 LEGACY_CV_FILE = Path("cv.tex")
+BIB_FILE = MASTER_CV_DIR / "pub.bib"   # single bibliography, lives inside MyCV/
 
 _INPUT_RE = re.compile(r"\\input\{([^}]+)\}")
 
@@ -268,7 +269,7 @@ def generate_cv(position_text, main_cv_content, similar_variants, model_name):
 
     # Read bibliography file for context
     bib_content = ""
-    bib_path = Path("pub.bib")
+    bib_path = BIB_FILE
     if bib_path.exists():
         bib_content = bib_path.read_text()
 
@@ -809,7 +810,7 @@ def main():
 
     # Link bibliography file if it exists (only relevant for CV)
     if not args.cover_letter:
-        bib_file = Path("pub.bib")
+        bib_file = BIB_FILE
         if bib_file.exists():
             bib_link = new_variant_dir / bib_file.name
             if not bib_link.exists():
