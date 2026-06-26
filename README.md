@@ -1,4 +1,4 @@
-# Elijah Nelson — CV
+# CV
 
 A LaTeX CV plus a small Python script that tailors it to a job description using Claude.
 
