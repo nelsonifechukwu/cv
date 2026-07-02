@@ -44,7 +44,7 @@ This repository is Elijah Nelson's CV system. This file is the **single source o
    - *Industry ML/AI engineer:* Experience → Skills → Projects → Education → Certifications.
    - *Embedded/systems engineer:* Experience → Projects → Skills → Education.
    - *Research / PhD / academic:* Education → Research → Publications → Teaching → Skills.
-5. **Select and exclude by relevance; compress hard.** Drop or condense weakly relevant entries; expand the directly relevant ones. Target ~2 pages for industry, 1.5–2 for academic.
+5. **Select and exclude by relevance; compress hard.** Drop or condense weakly relevant entries; expand the directly relevant ones. Target ~2 pages for industry, 1.5–2 for academic. `tailor.py` enforces a hard page cap via `--max-pages` (default 2): it counts the compiled PDF's pages and compresses the CV until it fits.
 6. **Red flags to remove:** unexplained gaps, duties listed without impact, dated/irrelevant tech, bullets over two lines, buzzword soup, inconsistent dates or verb tense, first-person voice.
 
 ## Terminology bank (use the precise current term — only when true)

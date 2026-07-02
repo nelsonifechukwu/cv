@@ -260,10 +260,11 @@ def find_similar_variants(position_text, variants, n=2):
     return [variants[i] for i in top_indices]
 
 
-def generate_cv(position_text, main_cv_content, similar_variants, model_name):
+def generate_cv(position_text, main_cv_content, similar_variants, model_name, max_pages=2):
     """Generates a new CV using the Anthropic Claude model.
 
     main_cv_content is the full master-CV LaTeX text (already flattened).
+    max_pages is the target maximum length in compiled pages.
     """
     client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
@@ -312,6 +313,12 @@ Your output must be valid LaTeX that can be directly compiled."""
             "\n\n# CV RULEBOOK (authoritative -- follow every rule exactly)\n\n"
             + rulebook
         )
+
+    system_prompt += (
+        f"\n\n# LENGTH LIMIT\nThe final CV MUST fit within {max_pages} page(s) when "
+        "compiled with pdflatex. Select and compress aggressively: keep the most "
+        "role-relevant content and drop or condense the rest so it does not overflow."
+    )
 
     messages = []
 
@@ -390,7 +397,7 @@ Your output must be valid LaTeX that can be directly compiled."""
     return generated_content.strip()
 
 
-def generate_cover_letter(position_text, main_cv_content, similar_variants, model_name):
+def generate_cover_letter(position_text, main_cv_content, similar_variants, model_name, max_pages=1):
     """Generates a new cover letter using the Anthropic Claude model.
 
     main_cv_content is the full master-CV LaTeX text (already flattened).
@@ -518,7 +525,7 @@ def generate_cover_letter(position_text, main_cv_content, similar_variants, mode
     return generated_content.strip()
 
 
-def refine_cv(position_text, draft_cv, model_name, rulebook=""):
+def refine_cv(position_text, draft_cv, model_name, rulebook="", max_pages=2):
     """Recruiter/ATS review-and-revise pass over a drafted CV.
 
     Acts as a senior recruiter for the target company AND an ATS screener:
@@ -553,6 +560,12 @@ HARD CONSTRAINTS:
             "\n\n# CV RULEBOOK (authoritative -- follow every rule exactly)\n\n"
             + rulebook
         )
+
+    system_prompt += (
+        f"\n\n# LENGTH LIMIT\nThe revised CV MUST fit within {max_pages} page(s) when "
+        "compiled. If the draft is at risk of overflowing, compress or drop the "
+        "least role-relevant content to stay within the limit."
+    )
 
     messages = [
         {
@@ -642,6 +655,89 @@ Be realistic and specific. Do not invent skills on the candidate's behalf."""
     except Exception as e:
         warn(f"Recommendation pass failed ({e}); skipping.")
         return ""
+
+
+_PAGES_RE = re.compile(r"Output written on \S+ \((\d+) pages?", re.IGNORECASE)
+
+
+def count_pdf_pages(variant_dir, base_name):
+    """Return the compiled PDF's page count by parsing the pdflatex .log.
+
+    Returns an int, or None if it cannot be determined.
+    """
+    log_path = Path(variant_dir) / f"{base_name}.log"
+    if not log_path.exists():
+        return None
+    try:
+        text = log_path.read_text(errors="ignore")
+    except Exception:
+        return None
+    match = _PAGES_RE.search(text)
+    return int(match.group(1)) if match else None
+
+
+def compress_cv(draft_cv, position_text, max_pages, current_pages, model_name, rulebook=""):
+    """Shorten a CV to fit within max_pages, using only content already present.
+
+    Returns the shortened LaTeX, or the original draft on failure.
+    """
+    client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+
+    system_prompt = f"""You are an expert CV editor. The CV below currently renders to {current_pages} page(s) but MUST fit within {max_pages} page(s) when compiled with pdflatex.
+
+Shorten it to fit, in this order of preference:
+1. Remove or condense the least role-relevant entries and bullets (judged against the job description below).
+2. Merge or tighten multi-line bullets into single lines; cut filler words.
+3. Trim long lists (skills, awards) to the most relevant items.
+
+HARD CONSTRAINTS:
+- Do NOT invent anything, and do NOT add any skill, tool, or keyword not already present.
+- Keep the Education section and the Publications / \\bibliography / \\nocite{{*}} block intact.
+- Do NOT change the preamble, structural LaTeX commands, or formatting macros; remove or condense content only.
+- Preserve the strongest, most role-relevant content and the first bullet of every role you keep.
+- Output ONLY the raw, compilable LaTeX. No commentary, no markdown code fences."""
+
+    if rulebook:
+        system_prompt += "\n\n# CV RULEBOOK (authoritative)\n\n" + rulebook
+
+    messages = [
+        {
+            "role": "user",
+            "content": (
+                f"Job description:\n\n{position_text}\n\n"
+                f"CV (LaTeX), currently {current_pages} pages, must fit within {max_pages}:\n\n{draft_cv}\n\n"
+                "Return the shortened CV as raw LaTeX only."
+            ),
+        }
+    ]
+
+    try:
+        response = client.messages.create(
+            model=model_name,
+            max_tokens=8000,
+            system=system_prompt,
+            messages=messages,
+        )
+        shortened = response.content[0].text.strip()
+    except Exception as e:
+        warn(f"Compression pass failed ({e}); keeping the current draft.")
+        return draft_cv
+
+    latex_blocks = re.findall(r"```latex\s*\n(.*?)\n```", shortened, re.DOTALL)
+    if latex_blocks:
+        shortened = max(latex_blocks, key=len)
+    else:
+        code_blocks = re.findall(r"```\s*\n(.*?)\n```", shortened, re.DOTALL)
+        if code_blocks:
+            shortened = max(code_blocks, key=len)
+    shortened = shortened.strip()
+
+    # A valid shortened CV must still be a complete document.
+    if "\\end{document}" not in shortened:
+        warn("Compression output looked malformed; keeping the current draft.")
+        return draft_cv
+
+    return shortened
 
 
 def generate_pdf(variant_dir, tex_filename):
@@ -748,6 +844,12 @@ def main():
         action="store_true",
         help="Skip the automatic recruiter/ATS review-and-revise pass on generated CVs.",
     )
+    parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=2,
+        help="Maximum number of pages a generated CV may occupy; it is compressed to fit (default: 2). Use 0 to disable the limit.",
+    )
     args = parser.parse_args()
 
     # Set artifact-type-specific filenames and directories
@@ -842,7 +944,7 @@ def main():
 
     inform(f"\nGenerating tailored {artifact_label} using {args.model}...")
     new_artifact = generator_fn(
-        clean_position_text, main_cv_content, similar_variants, args.model
+        clean_position_text, main_cv_content, similar_variants, args.model, args.max_pages
     )
     success(f"{artifact_label.capitalize()} generation complete!")
 
@@ -850,7 +952,7 @@ def main():
     if not args.cover_letter and not args.no_review:
         inform(f"\nRunning recruiter/ATS review pass (using {args.model})...")
         new_artifact = refine_cv(
-            clean_position_text, new_artifact, args.model, read_rulebook()
+            clean_position_text, new_artifact, args.model, read_rulebook(), args.max_pages
         )
         success("Review pass complete.")
 
@@ -881,6 +983,43 @@ def main():
         error("\nTraceback:")
         error(traceback.format_exc())
         raise
+
+    # Enforce the page limit (CVs only): compress and recompile until it fits.
+    if not args.cover_letter and args.max_pages > 0:
+        base_name = Path(artifact_filename).stem
+        pages = count_pdf_pages(new_variant_dir, base_name)
+        attempts = 0
+        while pages is not None and pages > args.max_pages and attempts < 3:
+            warn(
+                f"CV is {pages} pages; compressing to fit within {args.max_pages} "
+                f"(attempt {attempts + 1}/3)..."
+            )
+            new_artifact = compress_cv(
+                new_artifact,
+                clean_position_text,
+                args.max_pages,
+                pages,
+                args.model,
+                read_rulebook(),
+            )
+            (new_variant_dir / artifact_filename).write_text(new_artifact)
+            try:
+                pdf_path = generate_pdf(new_variant_dir, artifact_filename)
+            except Exception as e:
+                error(f"ERROR: Failed to recompile during compression: {e}")
+                break
+            pages = count_pdf_pages(new_variant_dir, base_name)
+            attempts += 1
+        if pages is None:
+            warn("Could not determine the CV's page count; skipping the page-limit check.")
+        elif pages > args.max_pages:
+            warn(
+                f"Could not get the CV under {args.max_pages} pages after {attempts} "
+                f"attempt(s); it is currently {pages} pages. Consider raising "
+                f"--max-pages or trimming the master CV."
+            )
+        else:
+            success(f"CV fits in {pages} page(s) (limit {args.max_pages}).")
 
     # Link or copy PDF (and .tex source) to pdfs directory
     pdfs_dir.mkdir(exist_ok=True)
