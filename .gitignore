@@ -14,6 +14,7 @@ pdfs/
 cover_letter_pdfs/
 variants/
 samples/
+company_research/
 
 # Secrets and local config
 .env

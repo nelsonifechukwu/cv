@@ -48,6 +48,11 @@ MASTER_CV_MAIN = MASTER_CV_DIR / "main.tex"
 LEGACY_CV_FILE = Path("cv.tex")
 BIB_FILE = MASTER_CV_DIR / "pub.bib"   # single bibliography, lives inside MyCV/
 
+# Company-research briefs (values, culture, evaluation philosophy, and CV
+# guidance for a target employer) are cached here, keyed by company slug, so a
+# company applied to repeatedly is only researched once.
+COMPANY_RESEARCH_DIR = Path("company_research")
+
 _INPUT_RE = re.compile(r"\\input\{([^}]+)\}")
 
 
@@ -139,6 +144,157 @@ Be concise and avoid unnecessary words. In case you cannot infer the position na
     except Exception as e:
         error(f"Position extraction failed: {e}")
         return "Position (extraction failed)"
+
+
+def extract_company_name(position_text):
+    """Extracts the hiring company's name from a job description.
+
+    Returns the plain company name (e.g. "Arm", "Apple"), or "UNKNOWN" if it
+    cannot be identified. Used to drive the company-research pass.
+    """
+    client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+
+    try:
+        response = client.messages.create(
+            model=LIGHTWEIGHT_MODEL,
+            max_tokens=30,
+            system="""You extract the hiring company's name from a job description.
+
+Respond with ONLY the company's common name, nothing else (no role, no location, no legal suffix unless it is part of the common name). For example: "Arm", "Apple", "Google DeepMind", "NVIDIA".
+
+If the description is from a recruiting agency posting on behalf of an unnamed client, or the company genuinely cannot be identified, respond with exactly: UNKNOWN""",
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Extract the hiring company's name from this job description:\n\n{position_text[:1500]}",
+                },
+            ],
+        )
+        name = response.content[0].text.strip()
+        return name if name else "UNKNOWN"
+    except Exception as e:
+        warn(f"Company-name extraction failed ({e}); skipping company research.")
+        return "UNKNOWN"
+
+
+def _company_slug(company_name):
+    """Turn a company name into a filesystem-safe slug for caching."""
+    slug = company_name.strip().lower()
+    slug = re.sub(r"[^\w\s-]", "", slug)
+    slug = re.sub(r"[\s_-]+", "_", slug).strip("_")
+    return slug or "unknown"
+
+
+def research_company(company_name, model_name, refresh=False):
+    """Research a target employer's values, culture, and application guidance.
+
+    Uses the Anthropic server-side web_search tool to gather, from the live web:
+    the company's stated mission/values/culture, how it says it evaluates
+    candidates (any distinctive hiring philosophy, e.g. Arm's "10x" mindset),
+    and any company-specific CV/resume/application advice. Returns a concise
+    markdown brief used to inform positioning, emphasis, section ordering, tone,
+    and vocabulary when tailoring the CV. It is intentionally company-focused
+    (not tied to one job description) so it can be cached and reused across
+    roles at the same company.
+
+    The brief is cached under company_research/<slug>.md and reused on later
+    runs unless refresh=True. Returns the brief text, or '' on failure (the
+    caller then simply tailors without company context).
+    """
+    if not company_name or company_name.strip().upper() == "UNKNOWN":
+        return ""
+
+    COMPANY_RESEARCH_DIR.mkdir(exist_ok=True)
+    cache_path = COMPANY_RESEARCH_DIR / f"{_company_slug(company_name)}.md"
+    if cache_path.exists() and not refresh:
+        cached = cache_path.read_text().strip()
+        if cached:
+            inform(f"Using cached company research: {cache_path}")
+            return cached
+
+    client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+
+    system_prompt = """You are a career-strategy researcher. Using the web_search tool, research the target company and produce a concise, factual brief that will guide how a candidate tailors their CV to that specific employer.
+
+Search for, and synthesise from real sources:
+- The company's stated mission, core values, and culture (use their own wording where possible).
+- How the company describes what it looks for in people and how it evaluates candidates, including any named or well-known hiring philosophy or mindset (for example, Arm is associated with a "10x" engineering mindset).
+- Any company-specific advice on writing a CV/resume and applying (from the company's careers pages, recruiter talks, or credible write-ups by people who have interviewed there).
+
+Then output ONLY a markdown brief with EXACTLY these sections:
+
+## Company snapshot
+2-3 sentences: what the company does and its stated mission.
+
+## Values & culture
+The 4-8 values/cultural themes that matter most, as short bullets. Where useful, keep the company's own vocabulary in quotes so it can be echoed truthfully in a CV.
+
+## What they prize in candidates
+How they evaluate people: the mindset, traits, and kinds of impact they reward. Name any distinctive philosophy (e.g. a "10x" mindset) and explain concretely what it means in practice.
+
+## CV & application guidance
+Company-specific, actionable tips for a CV/resume and application aimed at this employer. If you could not find company-specific advice, give the strongest role-appropriate defaults and say they are general.
+
+## How to reflect this on a technical CV (honest framing only)
+3-6 concrete, honest levers: which genuine achievements/keywords/framing to surface, which values to echo through real evidence, and how to order/emphasise content. This is for FRAMING, EMPHASIS, ORDERING, TONE, and VOCABULARY only. Never invent, exaggerate, or relabel skills the candidate lacks; a value can only be echoed where the candidate's real experience supports it.
+
+Rules:
+- Be specific and grounded in what you actually find; do not fabricate values or invent a hiring philosophy that is not real.
+- If searches are thin, say so briefly rather than padding.
+- Keep the whole brief under ~450 words. Output only the markdown brief, no preamble."""
+
+    try:
+        response = client.messages.create(
+            model=model_name,
+            max_tokens=2500,
+            system=system_prompt,
+            tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 6}],
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Research the company \"{company_name}\" and produce the tailoring brief. "
+                        "Prioritise the company's own careers/values pages and credible first-hand accounts."
+                    ),
+                }
+            ],
+        )
+    except Exception as e:
+        warn(f"Company research failed ({e}); tailoring without company context.")
+        return ""
+
+    brief = "".join(
+        b.text for b in response.content if getattr(b, "type", None) == "text"
+    ).strip()
+
+    if not brief:
+        warn("Company research returned no usable text; tailoring without company context.")
+        return ""
+
+    try:
+        cache_path.write_text(brief)
+        inform(f"Company research saved to: {cache_path}")
+    except Exception as e:
+        warn(f"Could not cache company research ({e}); continuing.")
+
+    return brief
+
+
+# Instruction block wrapping a company-research brief when it is injected into a
+# generation/review prompt. Framing/emphasis only -- never a licence to fabricate.
+def company_research_block(company_research):
+    """Return the prompt section for a company brief, or '' if there is none."""
+    if not company_research:
+        return ""
+    return (
+        "\n\n# COMPANY RESEARCH (values, culture, and application guidance for the target employer)\n"
+        "Use this to inform positioning, section ordering, emphasis, tone, and vocabulary: "
+        "echo the company's genuine values and priorities ONLY where the candidate's real "
+        "experience supports it. This NEVER overrides the honesty rules and is NEVER a licence "
+        "to invent, exaggerate, or relabel skills, tools, or experience. Do not name the company "
+        "anywhere in the CV body.\n\n"
+        + company_research
+    )
 
 
 def extract_position_content(position_text):
@@ -260,11 +416,13 @@ def find_similar_variants(position_text, variants, n=2):
     return [variants[i] for i in top_indices]
 
 
-def generate_cv(position_text, main_cv_content, similar_variants, model_name, max_pages=2):
+def generate_cv(position_text, main_cv_content, similar_variants, model_name, max_pages=2, company_research=""):
     """Generates a new CV using the Anthropic Claude model.
 
     main_cv_content is the full master-CV LaTeX text (already flattened).
     max_pages is the target maximum length in compiled pages.
+    company_research is an optional employer-values/culture brief used to inform
+    positioning and vocabulary (framing only, never fabrication).
     """
     client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
@@ -319,6 +477,8 @@ Your output must be valid LaTeX that can be directly compiled."""
         "compiled with pdflatex. Select and compress aggressively: keep the most "
         "role-relevant content and drop or condense the rest so it does not overflow."
     )
+
+    system_prompt += company_research_block(company_research)
 
     messages = []
 
@@ -397,10 +557,12 @@ Your output must be valid LaTeX that can be directly compiled."""
     return generated_content.strip()
 
 
-def generate_cover_letter(position_text, main_cv_content, similar_variants, model_name, max_pages=1):
+def generate_cover_letter(position_text, main_cv_content, similar_variants, model_name, max_pages=1, company_research=""):
     """Generates a new cover letter using the Anthropic Claude model.
 
     main_cv_content is the full master-CV LaTeX text (already flattened).
+    company_research is an optional employer-values/culture brief used to inform
+    tone and the "why this employer" close (framing only, never fabrication).
 
     Cover letters differ from CVs structurally: they are prose, four paragraphs,
     and require *selection* (pick one or two threads from the CV and develop them)
@@ -472,6 +634,8 @@ def generate_cover_letter(position_text, main_cv_content, similar_variants, mode
 - Modify or invent education, publications, or employment history
 - Mention things from the CV that do not improve the case for this specific role"""
 
+    system_prompt += company_research_block(company_research)
+
     messages = []
 
     # Few-shot from prior cover letters in the same voice, if any
@@ -525,7 +689,7 @@ def generate_cover_letter(position_text, main_cv_content, similar_variants, mode
     return generated_content.strip()
 
 
-def refine_cv(position_text, draft_cv, model_name, rulebook="", max_pages=2):
+def refine_cv(position_text, draft_cv, model_name, rulebook="", max_pages=2, company_research=""):
     """Recruiter/ATS review-and-revise pass over a drafted CV.
 
     Acts as a senior recruiter for the target company AND an ATS screener:
@@ -566,6 +730,15 @@ HARD CONSTRAINTS:
         "compiled. If the draft is at risk of overflowing, compress or drop the "
         "least role-relevant content to stay within the limit."
     )
+
+    system_prompt += company_research_block(company_research)
+    if company_research:
+        system_prompt += (
+            "\n\nWhen scoring and revising, judge the CV as this specific employer would given "
+            "the research above: reward evidence of the values and mindset they prize, and surface "
+            "genuine matches to their priorities into high-weight positions. Do so using only "
+            "content already in the draft."
+        )
 
     messages = [
         {
@@ -850,6 +1023,26 @@ def main():
         default=2,
         help="Maximum number of pages a generated CV may occupy; it is compressed to fit (default: 2). Use 0 to disable the limit.",
     )
+    parser.add_argument(
+        "--company-research",
+        "--company_research",
+        dest="company_research",
+        action="store_true",
+        default=True,
+        help="Research the target company's values, culture, evaluation philosophy, and CV guidance from the web, and use it to tailor the CV. Active by default.",
+    )
+    parser.add_argument(
+        "--no-company-research",
+        "--no_company_research",
+        dest="company_research",
+        action="store_false",
+        help="Disable the company-values/culture research pass.",
+    )
+    parser.add_argument(
+        "--refresh-company-research",
+        action="store_true",
+        help="Re-run company research from the web even if a cached brief exists.",
+    )
     args = parser.parse_args()
 
     # Set artifact-type-specific filenames and directories
@@ -942,9 +1135,28 @@ def main():
     else:
         inform("No similar variants found")
 
+    # Company-research pass (on by default): learn the target employer's values,
+    # culture, evaluation philosophy, and CV guidance from the web, and feed that
+    # brief into generation/review so the CV speaks to how THAT company hires.
+    company_brief = ""
+    if args.company_research:
+        inform(f"\nIdentifying target company (using {LIGHTWEIGHT_MODEL})...")
+        company_name = extract_company_name(clean_position_text)
+        if company_name.strip().upper() == "UNKNOWN":
+            warn("Could not identify the hiring company; skipping company research.")
+        else:
+            inform(f"Company: {company_name}")
+            inform(f"Researching {company_name} (web search, using {args.model})...")
+            company_brief = research_company(
+                company_name, args.model, refresh=args.refresh_company_research
+            )
+            if company_brief:
+                success("Company research complete.")
+
     inform(f"\nGenerating tailored {artifact_label} using {args.model}...")
     new_artifact = generator_fn(
-        clean_position_text, main_cv_content, similar_variants, args.model, args.max_pages
+        clean_position_text, main_cv_content, similar_variants, args.model,
+        args.max_pages, company_research=company_brief,
     )
     success(f"{artifact_label.capitalize()} generation complete!")
 
@@ -952,7 +1164,8 @@ def main():
     if not args.cover_letter and not args.no_review:
         inform(f"\nRunning recruiter/ATS review pass (using {args.model})...")
         new_artifact = refine_cv(
-            clean_position_text, new_artifact, args.model, read_rulebook(), args.max_pages
+            clean_position_text, new_artifact, args.model, read_rulebook(),
+            args.max_pages, company_research=company_brief,
         )
         success("Review pass complete.")
 
@@ -1069,6 +1282,13 @@ def main():
             warn("=== Recommendations (gaps to close -- NOT added to the CV) ===")
             inform(recommendations)
             success(f"Recommendations saved to: {rec_path}")
+
+    # Save the company-research brief next to the output so the candidate can see
+    # what employer context shaped the tailoring (and reuse it when applying).
+    if company_brief:
+        brief_path = pdfs_dir / f"{summary_name}.company_research.md"
+        brief_path.write_text(company_brief)
+        success(f"Company research saved to: {brief_path}")
 
     success(f"Final PDF location: {final_pdf_path}")
 
