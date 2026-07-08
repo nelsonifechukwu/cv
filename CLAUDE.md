@@ -5,7 +5,8 @@ This repository is Elijah Nelson's CV system. This file is the **single source o
 ## How the system works
 
 - **Master source:** the modular LaTeX in `MyCV/` (`main.tex` assembles `config/*` styling + `content/*.tex` sections; `pub.bib` is symlinked). This is the comprehensive master — it holds everything; it is a reference, not something sent to employers.
-- **Tailoring:** `tailor.py` flattens `MyCV/main.tex`, checks suitability against a job description, generates a tailored single-file `cv.tex` variant, runs a recruiter/ATS review-and-revise pass, and compiles a PDF.
+- **Tailoring:** `tailor.py` flattens `MyCV/main.tex`, checks suitability against a job description, researches the target company (values, culture, hiring philosophy, CV guidance) via web search, generates a tailored single-file `cv.tex` variant, runs a recruiter/ATS review-and-revise pass, and compiles a PDF.
+- **Company research (on by default):** the target employer is researched from the live web and a brief on its values, culture, evaluation philosophy (e.g. Arm's "10x mindset"), and CV/application guidance is injected into generation and review. It is cached under `company_research/`. Disable with `--no-company-research`.
 - **Legacy:** root `cv.tex` is a fallback only; edit `MyCV/content/*` instead.
 
 ## Core principles
@@ -38,14 +39,15 @@ This repository is Elijah Nelson's CV system. This file is the **single source o
 ## Tailoring rules (applied automatically per application)
 
 1. **Positioning.** Tailor the headline under the name and the Summary to the specific role; tune the wording of job titles to match the target vocabulary (without misrepresenting the actual role).
-2. **Recruiter match-score pass.** Before finalising, act as a senior recruiter *for that exact company*: give a match score out of 100, list the top missing keywords from the job description, and name the red flags a hiring manager would catch in under 10 seconds. Then revise to raise the score and remove the red flags — using only true content.
-3. **ATS-filter + hiring-manager pass.** Re-read as an ATS parser and as a manager scanning 200 résumés: identify which sections would be skipped, and rewrite them to stop the scroll.
-4. **Reorder sections by role type:**
+2. **Company-values alignment.** When a company-research brief is supplied, tailor not only to the role but to *how that employer hires*: mirror the company's genuine values, culture, and evaluation philosophy (e.g. Arm's "10x mindset") in the Summary emphasis, section ordering, and the framing/vocabulary of bullets — but only where the candidate's real experience already evidences it. This governs framing, emphasis, ordering, tone, and word choice; it is never a licence to invent, exaggerate, or relabel skills. Never name the target company in the CV body.
+3. **Recruiter match-score pass.** Before finalising, act as a senior recruiter *for that exact company*: give a match score out of 100, list the top missing keywords from the job description, and name the red flags a hiring manager would catch in under 10 seconds. Then revise to raise the score and remove the red flags — using only true content.
+4. **ATS-filter + hiring-manager pass.** Re-read as an ATS parser and as a manager scanning 200 résumés: identify which sections would be skipped, and rewrite them to stop the scroll.
+5. **Reorder sections by role type:**
    - *Industry ML/AI engineer:* Experience → Skills → Projects → Education → Certifications.
    - *Embedded/systems engineer:* Experience → Projects → Skills → Education.
    - *Research / PhD / academic:* Education → Research → Publications → Teaching → Skills.
-5. **Select and exclude by relevance; compress hard.** Drop or condense weakly relevant entries; expand the directly relevant ones. Target ~2 pages for industry, 1.5–2 for academic. `tailor.py` enforces a hard page cap via `--max-pages` (default 2): it counts the compiled PDF's pages and compresses the CV until it fits.
-6. **Red flags to remove:** unexplained gaps, duties listed without impact, dated/irrelevant tech, bullets over two lines, buzzword soup, inconsistent dates or verb tense, first-person voice.
+6. **Select and exclude by relevance; compress hard.** Drop or condense weakly relevant entries; expand the directly relevant ones. Target ~2 pages for industry, 1.5–2 for academic. `tailor.py` enforces a hard page cap via `--max-pages` (default 2): it counts the compiled PDF's pages and compresses the CV until it fits.
+7. **Red flags to remove:** unexplained gaps, duties listed without impact, dated/irrelevant tech, bullets over two lines, buzzword soup, inconsistent dates or verb tense, first-person voice.
 
 ## Terminology bank (use the precise current term — only when true)
 
