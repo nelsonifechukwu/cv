@@ -1,0 +1,36 @@
+% ============================================
+% MASTER CV (modular source) -- compile this file.
+% Styling lives in config/, content in content/.
+% Edit the content/*.tex files; this file only sets order.
+% Build: pdflatex main -> bibtex main -> pdflatex main x2
+% ============================================
+
+\documentclass[11pt, a4paper]{article}
+
+% ---- Configuration ----
+\input{config/packages.tex}
+\input{config/formatting.tex}
+\input{config/commands.tex}
+
+\begin{document}
+
+% ---- Header ----
+\input{content/personal-info.tex} 
+
+% ---- Sections (order mirrors the single-file master CV) ----
+\input{content/summary.tex}
+\input{content/education.tex}
+\input{content/research-interests.tex}
+\input{content/research-teaching.tex}
+\input{content/publications.tex}
+\input{content/experience.tex}
+\input{content/projects.tex} 
+\input{content/skills.tex} 
+\input{content/certifications.tex}
+\input{content/leadership.tex}
+\input{content/volunteering.tex}
+\input{content/awards.tex}
+\input{content/media.tex}
+\input{content/interests.tex}
+
+\end{document}

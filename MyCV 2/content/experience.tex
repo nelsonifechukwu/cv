@@ -1,0 +1,37 @@
+\sectiontitle{Professional Experience}
+
+\entrytitle{Founding Systems Engineer}{\href{https://climateinafrica.com/}{Climate in Africa}}{Lagos, Nigeria}{10/2023 - 08/2025}
+\begin{details}
+    \item Engineered low-cost, WMO-compliant Modular In-situ Reporting Instruments (MIRI) measuring 14 meteorological parameters; supported deployment of 1{,}000+ units across Nigeria, Ivory Coast, Kenya, and Ghana.
+    \item Developed a NOR Flash driver for the MT25QL01GBBB and co-designed CRC-verified over-the-air firmware updates over BLE and octet streams, enabling resilient field upgrades; ported approximately 3{,}000 lines of firmware from ATmega to STM32 F4/F103, improving performance by 30\%.
+    \item Extended MIRI battery life to 3.5 days by implementing an RTOS-based sleep scheduler and non-blocking state machines; reduced GSM/GPRS communication latency by approximately 70\% and added automatic NOR Flash/SD-card fallback logging during connectivity loss.
+    \item Architected the email and notification infrastructure for climateinafrica.com, which aggregates terabytes of monitor and user data, and built a NOAA ingestion pipeline to scrape, parse, and expose gigabyte-scale climate datasets within the analytics sandbox.
+    \item Owned end-to-end technical and product documentation for the platform, translating system architecture, firmware behaviour, deployment procedures, and operational workflows into maintainable engineering references.
+    \item Developed an autonomous low-Earth-orbit satellite tracker using non-blocking task scheduling for azimuth/elevation actuation and a custom LoRa ground-station link for telemetry and control.
+    \item Validated UHF/VHF satellite radios using spectrum and logic analysers, diagnosing signal-integrity and communications issues before field deployment.
+\end{details}
+
+\entrytitle{Machine Learning Engineer}{\href{https://www.ticki.co/}{Ticki}}{Remote}{08/2024 - 07/2025}
+\begin{details}
+    \item Architected a facial-similarity retrieval service using OpenCV, FAISS, Celery, and Redis for 5{,}000 users; reduced end-to-end latency by approximately 70\% to below 100 ms by migrating from IndexFlatL2 to IndexIVFFlat and caching embeddings in memory.
+    \item Built the complete indexing and retrieval pipeline: detected faces across the source image repository, generated traceable NumPy embeddings keyed to filenames, and matched query-face embeddings against the FAISS index.
+    \item Supported multi-face queries through an interactive selection workflow using in-memory BytesIO buffers; distributed face detection and embedding generation to Celery workers and used Redis to deduplicate previously processed images across an approximately 3{,}000-image dataset.
+    \item Hardened and scaled the Ubuntu VPS deployment for near-zero downtime under 1{,}000+ concurrent requests using IP-restricted UFW rules, least-privilege user groups, multiple Gunicorn workers, and Nginx load balancing.
+\end{details}
+
+\entrytitle{Reservoir Performance Simulation Intern}{\href{https://www.slb.com/}{Schlumberger (SLB)}}{Port Harcourt, Nigeria}{04/2022 - 08/2022}
+\begin{details}
+    \item Characterised drilling and formation-stability parameters through wet-lab rock and fluid analysis, including rheology, density/PVT, calorimetry, and precision measurements; interpreted subsurface and wellbore data in Petrel and Techlog.
+    \item Inspected, serviced, and validated CPS-361 surface units, compressors, generators, and associated flow, pressure, temperature, and optical sensors against pre-deployment checklists, increasing maintenance throughput by approximately 15\%; also proposed an automated CPS-361 design concept.
+    \item Managed IT operations across the SLB base, resolving hardware, software, printer, router, access-point, and user-provisioning issues while administering the support-ticket queue.
+\end{details}
+
+\entrytitle{Delegate of Croatia}{Model United Nations}{Beirut, Lebanon}{03/2019 - 04/2019}
+\begin{details}
+    \item Researched the protection of Indigenous cultural heritage and cultural artefacts, producing policy briefs and committee reports for UNESCO deliberations.
+\end{details}
+
+\entrytitle{Delegate of Israel}{Model United Nations}{Buenos Aires, Argentina}{09/2018 - 10/2018}
+\begin{details}
+    \item Researched and debated policy mechanisms for mitigating climate change impacts in developing economies.
+\end{details}
